@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skor Tablosu · Triviora</title>
+<meta name="description" content="Triviora skor tablosu — günlük, haftalık, aylık ve tüm zamanların sıralaması.">
+<link rel="icon" href="/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Playfair+Display:ital,wght@1,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .tabs { display: flex; gap: 6px; background: var(--navy-2); border: 1px solid var(--line);
+          border-radius: 999px; padding: 5px; margin: 24px 0 16px; }
+  .tabs button { flex: 1; border: 0; background: none; color: var(--muted); font: 700 14px/1 "Manrope", sans-serif;
+                 padding: 11px 6px; border-radius: 999px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--gold); color: var(--navy); }
+  .search { width: 100%; background: var(--navy-2); border: 1px solid var(--line); color: var(--cream);
+            font: 600 16px "Manrope", sans-serif; padding: 13px 16px; border-radius: 12px; }
+  .search::placeholder { color: var(--muted); }
+  .search:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+  .me { margin: 14px 0 0; padding: 14px 16px; border-radius: 12px; background: rgba(231,178,90,.12);
+        border: 1px solid rgba(231,178,90,.35); display: none; }
+  .me b { color: var(--gold); }
+  ol.board { list-style: none; padding: 0; margin: 18px 0 0; }
+  ol.board li { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px;
+                padding: 12px 6px; border-bottom: 1px solid var(--line); margin: 0; }
+  ol.board li.hit { background: rgba(231,178,90,.12); border-radius: 10px; }
+  .rank { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+          font: 800 15px/1 "Manrope", sans-serif; background: var(--navy-2); border: 1px solid var(--line); }
+  .r1 { background: #e7b25a; color: var(--navy); border: 0; }
+  .r2 { background: #b0bacc; color: var(--navy); border: 0; }
+  .r3 { background: #cd8c5c; color: var(--navy); border: 0; }
+  .name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { display: block; color: var(--muted); font-size: 13px; font-weight: 600; }
+  .pts { font-weight: 800; color: var(--gold); text-align: right; white-space: nowrap; }
+  .empty, .status { color: var(--muted); text-align: center; padding: 32px 8px; }
+  .more { display: block; margin: 16px auto 0; background: none; border: 1px solid var(--line); color: var(--cream);
+          font: 700 14px "Manrope", sans-serif; padding: 10px 20px; border-radius: 999px; cursor: pointer; }
+  .updated { color: var(--muted); font-size: 13px; text-align: center; margin-top: 18px; }
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <a href="/"><img src="/logo.png" alt=""></a><a class="brand" href="/">triviora</a>
+  <nav><a href="/skor/" aria-current="page">Skor</a><a href="/gizlilik/">Gizlilik</a></nav>
+</div></header>
+<main>
+<h1>Skor Tablosu</h1>
+<p class="meta">Hikayelerdeki sorulara <b>A, B, C veya D</b> yazarak yanıt ver, puan topla.</p>
+
+<div class="tabs" role="tablist">
+  <button role="tab" data-p="day">Bugün</button>
+  <button role="tab" data-p="week" aria-selected="true">Bu hafta</button>
+  <button role="tab" data-p="month">Bu ay</button>
+  <button role="tab" data-p="all">Tüm zamanlar</button>
+</div>
+
+<input class="search" id="q" type="search" placeholder="Kullanıcı adını ara (ör. @triviora)" autocomplete="off" autocapitalize="none">
+<div class="me" id="me"></div>
+
+<ol class="board" id="board"></ol>
+<p class="status" id="status">Yükleniyor…</p>
+<button class="more" id="more" hidden>Daha fazla göster</button>
+<p class="updated" id="updated"></p>
+
+<div class="box">
+<p style="margin:0 0 6px"><b>Puanlama</b></p>
+<ul style="margin:0">
+  <li>Her doğru cevap <b>10 puan</b>. Sadece ilk cevabın sayılır.</li>
+  <li>Seri bonusu: üst üste 3 doğru <b>+2</b>, 5 doğru <b>+5</b>, 10 ve üzeri her doğruda <b>+10</b>.</li>
+  <li>Yanlış cevap seriyi sıfırlar, puan düşürmez.</li>
+  <li>Adının görünmesini istemezsen bize <code>GİZLE</code> yaz. <a href="/gizlilik/">Gizlilik</a></li>
+</ul>
+</div>
+</main>
+<footer>© 2026 Triviora · <a href="/gizlilik/">Gizlilik Politikası</a> · <a href="/veri-silme/">Veri Silme</a></footer>
+
+<script>
+const SRC = "https://raw.githubusercontent.com/TrivioraTR/triviora-img/main/skor.json";
+const PAGE = 50;
+const LABEL = { day: "bugün", week: "bu hafta", month: "bu ay", all: "tüm zamanlarda" };
+let data = null, period = "week", shown = PAGE;
+try { period = localStorage.getItem("triviora-tab") || period; } catch (e) {}
+
+const $ = id => document.getElementById(id);
+const norm = s => (s || "").toLocaleLowerCase("tr").replace(/^@/, "").trim();
+
+function row(r, hit) {
+  const li = document.createElement("li");
+  if (hit) li.className = "hit";
+  const cls = r.r <= 3 ? " r" + r.r : "";
+  const streak = r.s >= 2 ? ` · 🔥 ${r.s}` : "";
+  li.innerHTML = `<span class="rank${cls}">${r.r}</span>
+    <span class="name"></span>
+    <span class="pts">${r.p} puan</span>`;
+  const nm = li.querySelector(".name");
+  nm.textContent = r.n;
+  const sub = document.createElement("span");
+  sub.className = "sub";
+  sub.textContent = `${r.d}/${r.o} doğru · en uzun seri ${r.b}${streak}`;
+  nm.appendChild(sub);
+  return li;
+}
+
+function render() {
+  document.querySelectorAll(".tabs button").forEach(b =>
+    b.setAttribute("aria-selected", b.dataset.p === period ? "true" : "false"));
+  const board = $("board"), status = $("status"), more = $("more"), me = $("me");
+  board.innerHTML = "";
+  if (!data) return;
+  const rows = (data[period] && data[period].rows) || [];
+  const q = norm($("q").value);
+  const hits = q ? rows.filter(r => norm(r.n).includes(q)) : [];
+
+  if (q) {
+    me.style.display = "block";
+    if (hits.length === 1) {
+      const h = hits[0];
+      me.innerHTML = "";
+      me.append(`${h.n}: ${LABEL[period]} `);
+      const b = document.createElement("b"); b.textContent = `${h.r}. sırada · ${h.p} puan`;
+      me.append(b);
+    } else if (hits.length > 1) {
+      me.textContent = `${hits.length} oyuncu bulundu.`;
+    } else {
+      me.textContent = `"${$("q").value}" ${LABEL[period]} listede yok. Henüz puanın olmayabilir ya da adını gizlemiş olabilirsin.`;
+    }
+  } else {
+    me.style.display = "none";
+  }
+
+  const list = q ? hits : rows.slice(0, shown);
+  list.forEach(r => board.appendChild(row(r, q && hits.length === 1)));
+  status.hidden = rows.length > 0;
+  status.textContent = "Bu dönem henüz puan yok. İlk soruyu yanıtlayan sen ol!";
+  more.hidden = q || rows.length <= shown;
+}
+
+async function load() {
+  try {
+    const res = await fetch(SRC + "?t=" + Math.floor(Date.now() / 60000), { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    data = await res.json();
+    const d = new Date(data.updated);
+    $("updated").textContent = "Son güncelleme: " + d.toLocaleString("tr-TR", {
+      day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Istanbul" });
+  } catch (e) {
+    data = { day: { rows: [] }, week: { rows: [] }, month: { rows: [] }, all: { rows: [] } };
+    $("updated").textContent = "Skorlar ilk soruyla birlikte burada görünecek.";
+  }
+  render();
+}
+
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
+  period = b.dataset.p; shown = PAGE;
+  try { localStorage.setItem("triviora-tab", period); } catch (e) {}
+  render();
+}));
+$("q").addEventListener("input", render);
+$("more").addEventListener("click", () => { shown += PAGE; render(); });
+const u = new URLSearchParams(location.search).get("u");
+if (u) $("q").value = u;
+load();
+setInterval(load, 5 * 60 * 1000);
+</script>
+</body>
+</html>
